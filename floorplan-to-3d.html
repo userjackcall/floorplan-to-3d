@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>樓層圖轉 3D 列印模型 v0.1</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a2e;color:#eee;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{background:#16213e;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #0f3460;flex-shrink:0}
+header h1{font-size:16px;font-weight:600}
+header .actions{display:flex;gap:4px}
+.btn{padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;transition:.2s;white-space:nowrap}
+.btn-primary{background:#e94560;color:#fff}
+.btn-primary:hover{background:#ff6b6b}
+.btn-success{background:#27ae60;color:#fff}
+.btn-success:hover{background:#2ecc71}
+.btn-secondary{background:#0f3460;color:#eee}
+.btn-secondary:hover{background:#1a2a4a}
+.main{display:flex;flex:1;overflow:hidden}
+.sidebar{width:300px;background:#16213e;border-right:1px solid #0f3460;overflow-y:auto;flex-shrink:0}
+.panel{padding:12px;border-bottom:1px solid #0f3460}
+.panel h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#e94560;margin-bottom:8px}
+.panel label{font-size:12px;color:#aaa;margin-bottom:4px}
+.viewport{flex:1;display:flex;flex-direction:column;position:relative;min-width:0}
+.view-btns{position:absolute;top:8px;right:8px;display:flex;gap:2px;background:rgba(22,33,62,.9);padding:3px;border-radius:6px;z-index:10}
+.view-btns button{padding:4px 12px;border:none;background:transparent;color:#aaa;border-radius:4px;cursor:pointer;font-size:12px}
+.view-btns button.active{background:#e94560;color:#fff}
+#canvasWrap{flex:1;position:relative;background:#0d0d1a;overflow:hidden}
+#canvas2d,#canvas3d{position:absolute;top:0;left:0;width:100%;height:100%}
+#canvas3d{display:none}
+.status{background:#0f3460;padding:4px 12px;display:flex;gap:16px;font-size:11px;color:#888;flex-shrink:0}
+.status span{white-space:nowrap}
+.tools{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.tools button{padding:6px 0;border:2px solid #0f3460;background:#1a1a2e;color:#ccc;border-radius:6px;cursor:pointer;font-size:11px;transition:.15s;text-align:center}
+.tools button:hover{border-color:#e94560;background:#1f2a4a}
+.tools button.active{border-color:#e94560;background:#3a1a2e;color:#fff}
+.tools button .icon{font-size:18px;display:block}
+.input-group{margin-bottom:8px}
+.input-group label{display:block;font-size:12px;color:#aaa;margin-bottom:2px}
+.input-group input[type=range]{width:100%;accent-color:#e94560;height:16px}
+.input-group .row{display:flex;gap:6px}
+.input-group .row input{flex:1;padding:4px 6px;background:#1a1a2e;border:1px solid #0f3460;border-radius:4px;color:#eee;font-size:12px;width:60px}
+.input-group .row select{padding:4px;background:#1a1a2e;border:1px solid #0f3460;border-radius:4px;color:#eee;font-size:12px}
+.layers{max-height:150px;overflow-y:auto}
+.layer-item{display:flex;align-items:center;gap:6px;padding:4px 6px;background:#1a1a2e;border-radius:4px;margin-bottom:4px;cursor:pointer;font-size:12px}
+.layer-item.active{border:1px solid #e94560}
+.layer-item .dot{width:14px;height:14px;border-radius:3px;flex-shrink:0}
+.layer-item .name{flex:1}
+.modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;z-index:100}
+.modal.open{display:flex}
+.modal-inner{background:#16213e;padding:24px;border-radius:12px;max-width:400px;width:90%;border:1px solid #0f3460}
+.modal-inner h2{color:#e94560;margin-bottom:12px;font-size:16px}
+.modal-inner p{color:#aaa;font-size:13px;margin-bottom:12px}
+.modal-inner .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+input[type=file]{display:none}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#0f3460}
+::-webkit-scrollbar-thumb{background:#e94560;border-radius:3px}
+</style>
+</head>
+<body>
+
+<header>
+<h1>樓層圖 → 3D 列印模型</h1>
+<div class="actions">
+<button class="btn btn-secondary" id="btnNew">開新專案</button>
+<button class="btn btn-secondary" id="btnSave">儲存</button>
+<button class="btn btn-secondary" id="btnLoad">載入</button>
+<button class="btn btn-success" id="btnExport">匯出 STL</button>
+</div>
+</header>
+
+<div class="main">
+
+<div class="sidebar">
+<div class="panel">
+<h3>基底圖</h3>
+<button class="btn btn-primary" style="width:100%;margin-bottom:6px" onclick="document.getElementById('imgInput').click()">📷 上傳樓層圖</button>
+<input type="file" id="imgInput" accept="image/*">
+<div class="input-group">
+<label>不透明度: <span id="opVal">50</span>%</label>
+<input type="range" id="opSlider" min="0" max="100" value="50">
+</div>
+<div class="input-group">
+<label>比例: 1px = <span id="scVal">1</span> mm</label>
+<input type="range" id="scSlider" min="0.1" max="10" step="0.1" value="1">
+</div>
+<div style="display:flex;gap:4px">
+
+<button class="btn btn-secondary" style="flex:1" id="btnFixImg">📌 固定</button>
+<button class="btn btn-secondary" style="flex:1" id="btnClearImg">清除</button>
+</div>
+</div>
+
+<div class="panel">
+<h3>繪圖工具</h3>
+<div class="tools" id="toolBtns">
+<button data-tool="select" class="active"><span class="icon">⬚</span>選取</button>
+<button data-tool="wall"><span class="icon">▬</span>牆壁</button>
+<button data-tool="door" title="點兩點裁切牆壁"><span class="icon">⊓</span>門</button>
+<button data-tool="window" title="點兩點裁切牆壁開窗"><span class="icon">⊞</span>窗</button>
+<button data-tool="stairs"><span class="icon">⏤</span>階梯</button>
+<button data-tool="room"><span class="icon">◻</span>房間</button>
+<button data-tool="furniture"><span class="icon">🪑</span>傢俱</button>
+<button data-tool="dimension"><span class="icon">↔</span>尺寸</button>
+<button data-tool="eraser"><span class="icon">✕</span>刪除</button>
+<button data-tool="pan"><span class="icon">✥</span>平移</button>
+</div>
+</div>
+
+<div class="panel">
+<h3>牆壁屬性</h3>
+<div class="input-group"><div class="row">
+<label>厚 <input type="number" id="wallThk" value="3" min="1" max="50" step="0.5"> mm</label>
+<label>高 <input type="number" id="wallHt" value="100" min="1" max="500" step="1"> mm</label>
+</div></div>
+<h3>窗戶屬性</h3>
+<div class="input-group"><div class="row">
+<label>離地高 <input type="number" id="winSill" value="10" min="0" max="200" step="1"> mm</label>
+<label>窗高 <input type="number" id="winHt" value="20" min="5" max="300" step="1"> mm</label>
+</div></div>
+</div>
+
+<div class="panel">
+<h3>列印選項</h3>
+<label style="display:block;margin-bottom:4px;font-size:12px"><input type="checkbox" id="chkBase" checked> 底板</label>
+<div class="input-group"><div class="row">
+<label>板厚 <input type="number" id="basePlateThk" value="2" min="1" max="10" step="0.5"> mm</label>
+<label>縮放 <input type="number" id="printScale" value="1" min="0.1" max="10" step="0.1"> x</label>
+</div></div>
+</div>
+
+<div class="panel">
+<h3>圖層</h3>
+<div class="layers" id="layerList"></div>
+</div>
+</div>
+
+<div class="viewport">
+<div class="view-btns">
+<button data-view="2d" class="active">2D 編輯</button>
+<button data-view="3d">3D 預覽</button>
+</div>
+<div id="canvasWrap">
+<canvas id="canvas2d"></canvas>
+<div id="canvas3d"></div>
+</div>
+<div class="status">
+<span id="sMode">模式: 選取</span>
+<span id="sCoord">座標: 0,0</span>
+<span id="sScale">比例: 1px=1mm</span>
+<span id="sCount">物件: 0</span>
+</div>
+</div>
+
+</div>
+
+
+<div class="modal" id="expModal">
+<div class="modal-inner">
+<h2>匯出 STL</h2>
+<div class="input-group"><div class="row">
+<label>檔名 <input type="text" id="expName" value="floorplan"></label>
+<label>單位 <select id="expUnit"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option></select></label>
+</div></div>
+<div class="input-group">
+<label>品質 <select id="expQuality"><option value="high">高細節</option><option value="medium" selected>中等</option><option value="low">小檔案</option></select></label>
+</div>
+<div class="actions">
+<button class="btn btn-secondary" onclick="expCancel()">取消</button>
+<button class="btn btn-success" onclick="expDo()">匯出</button>
+</div>
+</div>
+</div>
+
+<script type="importmap">
+{
+"imports": {
+"three": "https://cdn.jsdelivr.net/npm/three@0.164/build/three.module.js",
+"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164/examples/jsm/"
+}
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+
+// ====== State ======
+const S = {
+    tool: 'select',
+    objects: [], idCtr: 0,
+    scale: 1, offsetX: 0, offsetY: 0, zoom: 1,
+    bgImg: null, bgOp: 0.5, bgX: 0, bgY: 0, bgW: 250, bgH: 250, bgFixed: false, bgDragMode: null,
+    sel: null, hover: null, snapPt: null,
+    isDown: false, isDrag: false,
+    startX: 0, startY: 0, curX: 0, curY: 0,
+    wallThk: 3, wallHt: 100,
+    winSill: 10, winHt: 20,
+    basePlate: true, basePlateThk: 2, printScale: 1,
+
+    layers: [
+        {id:'walls',name:'牆壁',color:'#e94560',vis:true,ids:[]},
+        {id:'stairs',name:'階梯',color:'#9b59b6',vis:true,ids:[]},
+        {id:'rooms',name:'房間',color:'#2ecc71',vis:true,ids:[]},
+        {id:'furniture',name:'傢俱',color:'#95a5a6',vis:true,ids:[]},
+        {id:'dimensions',name:'尺寸',color:'#ecf0f1',vis:true,ids:[]}
+    ],
+    activeLayer: 'walls',
+    three: null, renderer: null, camera: null, controls: null, meshes: new Map()
+};
+
+// ====== Canvas ======
+const cv = document.getElementById('canvas2d');
+const cx = cv.getContext('2d');
+let W, H;
+
+function resize() {
+    const wrap = document.getElementById('canvasWrap');
+    W = wrap.clientWidth; H = wrap.clientHeight;
+    cv.width = W * devicePixelRatio; cv.height = H * devicePixelRatio;
+    cv.style.width = W+'px'; cv.style.height = H+'px';
+    cx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    if(S.renderer) { S.renderer.setSize(W, H); S.camera.aspect = W/H; S.camera.updateProjectionMatrix(); }
+    if(!S._inited) {
+        S._inited = true;
+        const pad = 0.8;
+        S.zoom = Math.min(W*pad/250, H*pad/250);
+        S.offsetX = (W - 250*S.zoom) / 2;
+        S.offsetY = (H - 250*S.zoom) / 2;
+    }
+    draw();
+}
+window.addEventListener('resize', resize);
+
+// ====== Drawing ======
+function draw() {
+    cx.clearRect(0, 0, W, H);
+    
+    // ----- 螢幕座標系 (背景/網格) -----
+    const gs = 500 * S.zoom, mg = 100 * S.zoom;
+    cx.strokeStyle = '#0f3460'; cx.lineWidth = 0.5;
+    for(let x = -S.offsetX % mg; x < W; x += mg) { cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,H); cx.stroke(); }
+    for(let y = -S.offsetY % mg; y < H; y += mg) { cx.beginPath(); cx.moveTo(0,y); cx.lineTo(W,y); cx.stroke(); }
+    cx.strokeStyle = '#1a2a4a'; cx.lineWidth = 1;
+    for(let x = -S.offsetX % gs; x < W; x += gs) { cx.beginPath(); cx.moveTo(x,0); cx.lineTo(x,H); cx.stroke(); }
+    for(let y = -S.offsetY % gs; y < H; y += gs) { cx.beginPath(); cx.moveTo(0,y); cx.lineTo(W,y); cx.stroke(); }
+    
+    cx.fillStyle = '#666'; cx.font = '9px monospace';
+    for(let x = -S.offsetX % gs; x < W; x += gs) {
+        const v = Math.round((x + S.offsetX) / S.zoom / S.scale);
+        if(v % 1000 === 0) cx.fillText(v/1000+'m', x+2, 10);
+    }
+    for(let y = -S.offsetY % gs; y < H; y += gs) {
+        const v = Math.round((y + S.offsetY) / S.zoom / S.scale);
+        if(v % 1000 === 0) cx.fillText(v/1000+'m', 2, y+10);
+    }
+    
+    // ----- 世界座標系 (物件/預覽) 套用 offset+zoom -----
+    cx.save();
+    cx.translate(S.offsetX, S.offsetY);
+    cx.scale(S.zoom, S.zoom);
+    
+    // 250x250mm work plane
+    cx.strokeStyle = '#ffffff'; cx.lineWidth = 2/S.zoom; cx.setLineDash([8/S.zoom,4/S.zoom]);
+    cx.strokeRect(0, 0, 250, 250);
+    cx.setLineDash([]);
+    cx.fillStyle = 'rgba(255,255,255,0.3)'; cx.font = (12/S.zoom)+'px sans-serif';
+    cx.fillText('250mm', 4/S.zoom, -4/S.zoom);
+    cx.fillText('250mm', -4/S.zoom, 14/S.zoom);
+    
+    // Background image
+    if(S.bgImg) {
+        cx.globalAlpha = S.bgOp;
+        cx.drawImage(S.bgImg, S.bgX, S.bgY, S.bgW, S.bgH);
+        cx.globalAlpha = 1;
+        if(S.bgFixed) {
+            cx.strokeStyle = '#4488ff'; cx.lineWidth = 1/S.zoom; cx.setLineDash([4/S.zoom,4/S.zoom]);
+            cx.strokeRect(S.bgX, S.bgY, S.bgW, S.bgH);
+            cx.setLineDash([]);
+            cx.fillStyle = '#4488ff'; cx.font = (11/S.zoom)+'px sans-serif';
+            cx.fillText('已固定 - 點「📌 解除固定」可重新編輯', S.bgX, S.bgY - 6/S.zoom);
+        } else {
+            cx.strokeStyle = '#00ff00'; cx.lineWidth = 2/S.zoom;
+            const hs = 5/S.zoom;
+            [[S.bgX,S.bgY],[S.bgX+S.bgW,S.bgY],[S.bgX+S.bgW,S.bgY+S.bgH],[S.bgX,S.bgY+S.bgH]].forEach(([hx,hy]) => {
+                cx.strokeRect(hx-hs/2, hy-hs/2, hs, hs);
+            });
+            cx.strokeStyle = '#00ff00'; cx.lineWidth = 1/S.zoom; cx.setLineDash([4/S.zoom,4/S.zoom]);
+            cx.strokeRect(S.bgX, S.bgY, S.bgW, S.bgH);
+            cx.setLineDash([]);
+            cx.fillStyle = '#00ff00'; cx.font = (11/S.zoom)+'px sans-serif';
+            cx.fillText('拖曳移動 / 角落調整大小 / 點「📌 固定」完成', S.bgX, S.bgY - 6/S.zoom);
+        }
+    }
+    
+    const layersVis = {};
+    S.layers.forEach(l => layersVis[l.id] = l.vis);
+    S.objects.forEach(o => {
+        if(!layersVis[o.layer]) return;
+        drawObj(o, o === S.sel || o === S.hover);
+    });
+    
+    if(S.isDown && S.startX !== undefined && ['wall','door','window','stairs','room','furniture','dimension'].includes(S.tool)) {
+        drawPreview();
+    }
+    
+    // Snap indicator
+    if(S.snapPt) {
+        cx.fillStyle = '#ff6b6b'; cx.strokeStyle = '#fff'; cx.lineWidth = 2/S.zoom;
+        cx.beginPath(); cx.arc(S.snapPt.x, S.snapPt.y, 6/S.zoom, 0, Math.PI*2); cx.fill(); cx.stroke();
+    }
+    
+    // 門工具 - 第一點指示器
+    if(S.tool === 'door' && S.doorPts && S.doorPts.length === 1) {
+        cx.fillStyle = '#f39c12'; cx.strokeStyle = '#fff'; cx.lineWidth = 2/S.zoom;
+        cx.beginPath(); cx.arc(S.doorPts[0].x, S.doorPts[0].y, 8/S.zoom, 0, Math.PI*2); cx.fill(); cx.stroke();
+    }
+    
+    // 窗工具 - 第一點指示器
+    if(S.tool === 'window' && S.winPts && S.winPts.length === 1) {
+        cx.fillStyle = '#3498db'; cx.strokeStyle = '#fff'; cx.lineWidth = 2/S.zoom;
+        cx.beginPath(); cx.arc(S.winPts[0].x, S.winPts[0].y, 8/S.zoom, 0, Math.PI*2); cx.fill(); cx.stroke();
+    }
+    
+    cx.restore();
+    
+    // ----- 螢幕座標 (選取框) -----
+    if(S.isDown && S.isDrag && S.tool === 'select' && !S.sel) {
+        cx.strokeStyle = '#e94560'; cx.lineWidth = 1; cx.setLineDash([5,5]);
+        const x1=S.startX*S.zoom+S.offsetX, y1=S.startY*S.zoom+S.offsetY;
+        const x2=S.curX*S.zoom+S.offsetX, y2=S.curY*S.zoom+S.offsetY;
+        cx.strokeRect(Math.min(x1,x2), Math.min(y1,y2), Math.abs(x2-x1), Math.abs(y2-y1));
+        cx.setLineDash([]);
+    }
+}
+
+function drawObj(o, hi) {
+    const lw = (hi ? 3 : 2) / S.zoom, a = o === S.hover && o !== S.sel ? 0.7 : 1;
+    const fz = 11 / S.zoom, fz2 = 13 / S.zoom, fz3 = 18 / S.zoom;
+    cx.save(); cx.globalAlpha = a; cx.lineWidth = lw;
+    const c = o.color || '#ccc';
+    
+    switch(o.type) {
+        case 'wall': {
+            cx.strokeStyle = hi ? '#ff6b6b' : c;
+            cx.lineWidth = hi ? 4/S.zoom : 2.5/S.zoom;
+            cx.beginPath(); cx.moveTo(o.sX, o.sY); cx.lineTo(o.eX, o.eY); cx.stroke();
+            // 繪製窗戶切割
+            if(o.windowCuts && o.windowCuts.length > 0) {
+                const wdx = o.eX-o.sX, wdy = o.eY-o.sY;
+                const wlen = Math.sqrt(wdx*wdx+wdy*wdy);
+                if(wlen > 0) {
+                    const wnx = wdx/wlen, wny = wdy/wlen;
+                    cx.strokeStyle = '#3498db'; cx.lineWidth = 4/S.zoom;
+                    o.windowCuts.forEach(wc => {
+                        const x1 = o.sX + wnx*wc.t1, y1 = o.sY + wny*wc.t1;
+                        const x2 = o.sX + wnx*wc.t2, y2 = o.sY + wny*wc.t2;
+                        cx.beginPath(); cx.moveTo(x1, y1); cx.lineTo(x2, y2); cx.stroke();
+                    });
+                }
+            }
+            if(hi) {
+                cx.fillStyle = '#fff'; cx.font = fz+'px sans-serif';
+                cx.fillText((o.thk||S.wallThk)+'mm', (o.sX+o.eX)/2+8/S.zoom, (o.sY+o.eY)/2-8/S.zoom);
+            }
+            break;
+        }
+        case 'stairs': {
+            cx.strokeStyle = hi ? '#bb8fce' : c; cx.fillStyle = 'rgba(155,89,182,0.15)';
+            cx.strokeRect(o.x, o.y, o.w, o.h); cx.fillRect(o.x, o.y, o.w, o.h);
+            const st = Math.max(3, Math.round(o.h/200));
+            for(let i=1; i<st; i++) { const yy=o.y+(o.h/st)*i; cx.beginPath(); cx.moveTo(o.x,yy); cx.lineTo(o.x+o.w,yy); cx.stroke(); }
+            cx.fillStyle = c; cx.beginPath(); cx.moveTo(o.x+o.w/2, o.y+o.h-15);
+            cx.lineTo(o.x+o.w/2-12, o.y+o.h-30); cx.lineTo(o.x+o.w/2+12, o.y+o.h-30); cx.fill();
+            if(hi) { cx.fillStyle = '#fff'; cx.font = fz+'px sans-serif'; cx.fillText('階梯 '+o.w+'x'+o.h+'mm', o.x, o.y-4/S.zoom); }
+            break;
+        }
+        case 'room': {
+            cx.fillStyle = hi ? 'rgba(46,204,113,0.25)' : c+'30';
+            cx.strokeStyle = hi ? '#2ecc71' : c; cx.setLineDash([8,4]);
+            cx.beginPath(); cx.rect(o.x, o.y, o.w, o.h); cx.fill(); cx.stroke(); cx.setLineDash([]);
+            if(o.name) { cx.fillStyle = '#fff'; cx.font = fz2+'px sans-serif'; cx.fillText(o.name, o.x+6/S.zoom, o.y+20/S.zoom); }
+            if(hi) { cx.fillStyle = '#fff'; cx.font = fz+'px sans-serif'; cx.fillText(Math.round(o.w)+'x'+Math.round(o.h)+'mm', o.x+6/S.zoom, o.y+o.h-6/S.zoom); }
+            break;
+        }
+        case 'furniture': {
+            cx.strokeStyle = hi ? '#bdc3c7' : c; cx.fillStyle = 'rgba(149,165,166,0.1)'; cx.setLineDash([4,4]);
+            cx.strokeRect(o.x, o.y, o.w, o.h); cx.fillRect(o.x, o.y, o.w, o.h); cx.setLineDash([]);
+            const icons = {table:'🪑',bed:'🛏️',sofa:'🛋️',cabinet:'🗄️',sink:'🚿',toilet:'🚽'};
+            cx.font = fz3+'px sans-serif'; cx.fillText(icons[o.furType]||'📦', o.x+o.w/2-9/S.zoom, o.y+o.h/2+6/S.zoom);
+            if(hi) { cx.fillStyle = '#fff'; cx.font = fz+'px sans-serif'; cx.fillText(o.furType, o.x, o.y-4/S.zoom); }
+            break;
+        }
+        case 'dimension': {
+            cx.strokeStyle = hi ? '#fff' : c; cx.lineWidth = 1/S.zoom; cx.setLineDash([4,4]);
+            cx.beginPath(); cx.moveTo(o.sX, o.sY); cx.lineTo(o.eX, o.eY); cx.stroke();
+            const ang = Math.atan2(o.eY-o.sY, o.eX-o.sX), hl = 12/S.zoom;
+            cx.beginPath();
+            cx.moveTo(o.sX,o.sY); cx.lineTo(o.sX-hl*Math.cos(ang-Math.PI/6), o.sY-hl*Math.sin(ang-Math.PI/6));
+            cx.moveTo(o.sX,o.sY); cx.lineTo(o.sX-hl*Math.cos(ang+Math.PI/6), o.sY-hl*Math.sin(ang+Math.PI/6));
+            cx.moveTo(o.eX,o.eY); cx.lineTo(o.eX+hl*Math.cos(ang-Math.PI/6), o.eY+hl*Math.sin(ang-Math.PI/6));
+            cx.moveTo(o.eX,o.eY); cx.lineTo(o.eX+hl*Math.cos(ang+Math.PI/6), o.eY+hl*Math.sin(ang+Math.PI/6));
+            cx.stroke(); cx.setLineDash([]);
+            const dist = Math.sqrt((o.eX-o.sX)**2+(o.eY-o.sY)**2);
+            cx.fillStyle = hi ? '#fff' : c; cx.font = fz+'px sans-serif';
+            cx.fillText(Math.round(dist*S.scale)+'mm', (o.sX+o.eX)/2+8/S.zoom, (o.sY+o.eY)/2-4/S.zoom);
+            break;
+        }
+    }
+    
+    // Control points
+    if(hi && (S.tool === 'select' || S.tool === 'eraser')) {
+        cx.fillStyle = '#e94560'; cx.strokeStyle = '#fff'; cx.lineWidth = 2/S.zoom;
+        const pts = [];
+        if(['wall','dimension'].includes(o.type)) pts.push({x:o.sX,y:o.sY},{x:o.eX,y:o.eY});
+        else pts.push({x:o.x,y:o.y},{x:o.x+o.w,y:o.y},{x:o.x,y:o.y+o.h},{x:o.x+o.w,y:o.y+o.h});
+        pts.forEach(p => { cx.beginPath(); cx.arc(p.x, p.y, 5/S.zoom, 0, Math.PI*2); cx.fill(); cx.stroke(); });
+    }
+    cx.restore();
+}
+
+function drawPreview() {
+    cx.save(); cx.lineWidth = 2/S.zoom; cx.setLineDash([8/S.zoom,4/S.zoom]);
+    const fz1 = 11/S.zoom, fz2 = 13/S.zoom;
+    const sx = S.startX, sy = S.startY, ex = S.curX, ey = S.curY;
+    const x = Math.min(sx,ex), y = Math.min(sy,ey), w = Math.abs(ex-sx), h = Math.abs(ey-sy);
+    
+    switch(S.tool) {
+        case 'wall':
+            cx.strokeStyle = '#e94560'; cx.lineWidth = 3/S.zoom;
+            cx.beginPath(); cx.moveTo(sx,sy); cx.lineTo(ex,ey); cx.stroke();
+            // HV label
+            const label = hvLabel({x:sx,y:sy}, {x:ex,y:ey});
+            if(label) {
+                cx.fillStyle = '#e94560'; cx.font = fz2+'px sans-serif';
+                cx.fillText(label, (sx+ex)/2+10/S.zoom, (sy+ey)/2-10/S.zoom);
+            }
+            break;
+        case 'door':
+            cx.strokeStyle = '#f39c12'; cx.strokeRect(x,y,w||900,h||100); break;
+        case 'window':
+            cx.strokeStyle = '#3498db'; cx.strokeRect(x,y,w||1200,h||100); break;
+        case 'stairs':
+            cx.strokeStyle = '#9b59b6'; cx.strokeRect(x,y,w||1200,h||2000);
+            for(let i=1;i<10;i++){const yy=y+(h/10||200)*i;cx.beginPath();cx.moveTo(x,yy);cx.lineTo(x+w,yy);cx.stroke();}
+            break;
+        case 'room':
+            cx.fillStyle = 'rgba(46,204,113,0.15)'; cx.strokeStyle = '#2ecc71';
+            cx.beginPath(); cx.rect(x,y,w,h); cx.fill(); cx.stroke(); break;
+        case 'furniture':
+            cx.strokeStyle = '#95a5a6'; cx.strokeRect(x,y,w||1500,h||800); break;
+        case 'dimension':
+            cx.strokeStyle = '#ecf0f1'; cx.beginPath(); cx.moveTo(sx,sy); cx.lineTo(ex,ey); cx.stroke(); break;
+    }
+    cx.setLineDash([]); cx.restore();
+}
+
+// ====== Coordinate ======
+function wpos(e) {
+    const r = cv.getBoundingClientRect();
+    return { x: (e.clientX - r.left - S.offsetX) / S.zoom, y: (e.clientY - r.top - S.offsetY) / S.zoom };
+}
+
+function hit(o, pt) {
+    const pad = 6 / S.zoom;
+    if(o.type === 'wall' || o.type === 'dimension') return distPtLine(pt, {x:o.sX,y:o.sY}, {x:o.eX,y:o.eY}) < pad;
+    return pt.x >= o.x-pad && pt.x <= o.x+o.w+pad && pt.y >= o.y-pad && pt.y <= o.y+o.h+pad;
+}
+
+function distPtLine(p, a, b) {
+    const dx = b.x-a.x, dy = b.y-a.y, len = Math.sqrt(dx*dx+dy*dy);
+    if(!len) return Math.sqrt((p.x-a.x)**2+(p.y-a.y)**2);
+    const t = Math.max(0, Math.min(1, ((p.x-a.x)*dx+(p.y-a.y)*dy)/(len*len)));
+    return Math.sqrt((p.x-(a.x+t*dx))**2+(p.y-(a.y+t*dy))**2);
+}
+
+function findObj(pt) {
+    for(let i=S.objects.length-1; i>=0; i--) {
+        const o = S.objects[i], l = S.layers.find(l => l.id === o.layer);
+        if(l && l.vis && hit(o, pt)) return o;
+    }
+    return null;
+}
+
+// ====== Mouse Events ======
+const SNAP_RADIUS = 12; // 像素
+
+function snapPt(pt, checkLines) {
+    let best = null, bestDist = SNAP_RADIUS / S.zoom;
+    // Snap to endpoints
+    S.objects.forEach(o => {
+        if(o.type === 'wall' || o.type === 'dimension') {
+            const d1 = Math.sqrt((pt.x-o.sX)**2+(pt.y-o.sY)**2);
+            const d2 = Math.sqrt((pt.x-o.eX)**2+(pt.y-o.eY)**2);
+            if(d1 < bestDist) { bestDist = d1; best = {x:o.sX, y:o.sY, type:'end'}; }
+            if(d2 < bestDist) { bestDist = d2; best = {x:o.eX, y:o.eY, type:'end'}; }
+        }
+    });
+    // Snap to wall lines (along the wall, not just endpoints)
+    if(checkLines !== false) {
+        S.objects.filter(o => o.type === 'wall').forEach(o => {
+            const d = distPtLine(pt, {x:o.sX,y:o.sY}, {x:o.eX,y:o.eY});
+            if(d < bestDist) {
+                // Find closest point on line
+                const dx = o.eX-o.sX, dy = o.eY-o.sY, len2 = dx*dx+dy*dy;
+                if(len2 > 0) {
+                    const t = Math.max(0, Math.min(1, ((pt.x-o.sX)*dx+(pt.y-o.sY)*dy)/len2));
+                    if(t > 0.05 && t < 0.95) { // only snap to body, not endpoints
+                        const cp = {x: o.sX+t*dx, y: o.sY+t*dy};
+                        const dotDist = Math.sqrt((pt.x-cp.x)**2+(pt.y-cp.y)**2);
+                        if(dotDist < bestDist) { bestDist = dotDist; best = {x:cp.x, y:cp.y, type:'line'}; }
+                    }
+                }
+            }
+        });
+    }
+    return best;
+}
+
+// Horizontal/Vertical constraint: snap to nearest 0/90 degree
+function hvSnap(start, end) {
+    const dx = end.x - start.x, dy = end.y - start.y;
+    if(Math.abs(dx) < 3 / S.zoom && Math.abs(dy) < 3 / S.zoom) return end;
+    const deg = Math.abs(Math.atan2(dy, dx)) * 180 / Math.PI;
+    if(deg < 8 || deg > 172) return {x: end.x, y: start.y}; // horizontal
+    if(deg > 82 && deg < 98) return {x: start.x, y: end.y}; // vertical
+    return end;
+}
+
+function hvLabel(start, end) {
+    const deg = Math.abs(Math.atan2(end.y - start.y, end.x - start.x)) * 180 / Math.PI;
+    if(deg < 8 || deg > 172) return '水平';
+    if(deg > 82 && deg < 98) return '垂直';
+    return null;
+}// 找到點擊到的牆壁
+function findWallAtPoint(pt) {
+    const walls = S.objects.filter(o => o.type === 'wall');
+    let bestWall = null, bestDist = 15; // 最大15單位距離
+    
+    for(const wall of walls) {
+        const d = distPtLine(pt, {x:wall.sX,y:wall.sY}, {x:wall.eX,y:wall.eY});
+        if(d < bestDist) {
+            bestDist = d;
+            bestWall = wall;
+        }
+    }
+    return bestWall;
+}
+
+// 窗戶裁切牆壁 - 點兩點裁切
+function cutWallWithWindow(p1, p2) {
+    // 找到兩個點各自點擊的牆壁
+    const wall1 = findWallAtPoint(p1);
+    const wall2 = findWallAtPoint(p2);
+    
+    // 必須是同一面牆
+    if(!wall1 || !wall2 || wall1.id !== wall2.id) return false;
+    
+    const wall = wall1;
+    const wx1 = wall.sX, wy1 = wall.sY, wx2 = wall.eX, wy2 = wall.eY;
+    const wthk = wall.thk || S.wallThk;
+    const wallHt = wall.ht || S.wallHt;
+    
+    // 投影兩點到牆壁向量
+    const wdx = wx2 - wx1, wdy = wy2 - wy1;
+    const wlen = Math.sqrt(wdx*wdx + wdy*wdy);
+    if(wlen < 1) return false;
+    const wnx = wdx/wlen, wny = wdy/wlen;
+    
+    const t1 = ((p1.x-wx1)*wnx + (p1.y-wy1)*wny);
+    const t2 = ((p2.x-wx1)*wnx + (p2.y-wy1)*wny);
+    
+    const tmin = Math.min(t1, t2);
+    const tmax = Math.max(t1, t2);
+    const winW = tmax - tmin;
+    
+    // 窗戶寬度太小
+    if(winW < 5) return false;
+    
+    // 建立窗戶切割物件
+    if(!wall.windowCuts) wall.windowCuts = [];
+    wall.windowCuts.push({ t1: tmin, t2: tmax });
+    
+    return true;
+}
+
+// 門裁切牆壁 - 點兩點裁切
+function cutWallWithDoor(p1, p2) {
+    // 找到兩個點各自點擊的牆壁
+    const wall1 = findWallAtPoint(p1);
+    const wall2 = findWallAtPoint(p2);
+    
+    // 必須是同一面牆
+    if(!wall1 || !wall2 || wall1.id !== wall2.id) return false;
+    
+    const wall = wall1;
+    const wx1 = wall.sX, wy1 = wall.sY, wx2 = wall.eX, wy2 = wall.eY;
+    const wthk = wall.thk || S.wallThk;
+    
+    // 投影兩點到牆壁向量
+    const wdx = wx2 - wx1, wdy = wy2 - wy1;
+    const wlen = Math.sqrt(wdx*wdx + wdy*wdy);
+    if(wlen < 1) return false;
+    const wnx = wdx/wlen, wny = wdy/wlen;
+    
+    const t1 = ((p1.x-wx1)*wnx + (p1.y-wy1)*wny);
+    const t2 = ((p2.x-wx1)*wnx + (p2.y-wy1)*wny);
+    
+    const tmin = Math.min(t1, t2);
+    const tmax = Math.max(t1, t2);
+    
+    // 移除舊牆壁
+    const layer = S.layers.find(l => l.id === wall.layer);
+    if(layer) layer.ids = layer.ids.filter(id => id !== wall.id);
+    S.objects = S.objects.filter(o => o.id !== wall.id);
+    
+    // 門前牆段
+    if(tmin > 1) {
+        const nw1 = {
+            id: ++S.idCtr, type: 'wall', layer: wall.layer,
+            sX: wx1, sY: wy1, eX: wx1 + wnx*tmin, eY: wy1 + wny*tmin,
+            x: Math.min(wx1, wx1+wnx*tmin), y: Math.min(wy1, wy1+wny*tmin),
+            w: tmin, h: wthk, thk: wthk, ht: wall.ht,
+            color: wall.color
+        };
+        S.objects.push(nw1);
+        if(layer) layer.ids.push(nw1.id);
+    }
+    
+    // 門後牆段
+    if((wlen - tmax) > 1) {
+        const nw2 = {
+            id: ++S.idCtr, type: 'wall', layer: wall.layer,
+            sX: wx1 + wnx*tmax, sY: wy1 + wny*tmax, eX: wx2, eY: wy2,
+            x: Math.min(wx1+wnx*tmax, wx2), y: Math.min(wy1+wny*tmax, wy2),
+            w: wlen - tmax, h: wthk, thk: wthk, ht: wall.ht,
+            color: wall.color
+        };
+        S.objects.push(nw2);
+        if(layer) layer.ids.push(nw2.id);
+    }
+    
+    return true;
+}
+
+cv.addEventListener('mousedown', e => {
+    if(e.button !== 0) return;
+    let p = wpos(e);
+    S.isDown = true; S.startX = p.x; S.startY = p.y; S.curX = p.x; S.curY = p.y;
+    
+    // Background image drag/resize
+    if(S.bgImg && !S.bgFixed) {
+        const hs = 10 / S.zoom;
+        const corners = [[S.bgX,S.bgY],[S.bgX+S.bgW,S.bgY],[S.bgX+S.bgW,S.bgY+S.bgH],[S.bgX,S.bgY+S.bgH]];
+        for(let i=0; i<4; i++) {
+            const [cx2,cy2] = corners[i];
+            if(Math.abs(p.x-cx2)<hs && Math.abs(p.y-cy2)<hs) {
+                S.bgDragMode = 'resize'; S.bgDragCorner = i; draw(); return;
+            }
+        }
+        if(p.x>=S.bgX && p.x<=S.bgX+S.bgW && p.y>=S.bgY && p.y<=S.bgY+S.bgH) {
+            S.bgDragMode = 'move'; S.bgDragOff = {x:p.x-S.bgX, y:p.y-S.bgY}; draw(); return;
+        }
+    }
+    
+    // 門工具 - 點兩點裁切
+    if(S.tool === 'door') {
+        if(!S.doorPts) S.doorPts = [];
+        S.doorPts.push({x: p.x, y: p.y});
+        if(S.doorPts.length === 2) {
+            cutWallWithDoor(S.doorPts[0], S.doorPts[1]);
+            S.doorPts = null;
+            draw(); update3D();
+        }
+        return;
+    }
+    
+    // 窗工具 - 點兩點裁切
+    if(S.tool === 'window') {
+        if(!S.winPts) S.winPts = [];
+        S.winPts.push({x: p.x, y: p.y});
+        if(S.winPts.length === 2) {
+            cutWallWithWindow(S.winPts[0], S.winPts[1]);
+            S.winPts = null;
+            draw(); update3D();
+        }
+        return;
+    }
+    
+    // Snap start point for drawing tools
+    if(['wall','window','stairs','dimension'].includes(S.tool)) {
+        const sp = snapPt(p);
+        if(sp) { S.startX = sp.x; S.startY = sp.y; p = sp; }
+    }
+    
+    if(S.tool === 'select') {
+        S.sel = findObj(p);
+        if(S.sel) { S.isDrag = true; S.dragOff = {x: p.x-S.sel.sX, y: p.y-S.sel.sY}; }
+        else { S.isDrag = true; }
+    } else if(S.tool === 'eraser') {
+        const o = findObj(p); if(o) { S.objects = S.objects.filter(x => x.id !== o.id);
+            S.layers.forEach(l => l.ids = l.ids.filter(id => id !== o.id));
+            S.sel = null; draw(); update3D(); updateStatus(); }
+    } else if(S.tool === 'pan') {
+        S.isDrag = true; cv.style.cursor = 'grabbing';
+    }
+    draw();
+});
+
+cv.addEventListener('mousemove', e => {
+    let p = wpos(e);
+    S.curX = p.x; S.curY = p.y;
+    document.getElementById('sCoord').textContent = `座標: ${Math.round(p.x)},${Math.round(p.y)}`;
+    
+    // Snap point indicator
+    S.snapPt = null;
+    if(!S.isDown && ['wall','door','window','stairs','dimension'].includes(S.tool)) {
+        S.snapPt = snapPt(p);
+    }
+    
+    if(!S.isDown) {
+        const o = findObj(p);
+        S.hover = o;
+        cv.style.cursor = o && S.tool === 'select' ? 'pointer' : S.tool === 'pan' ? 'grab' : 'default';
+        // Image hover cursor
+        if(S.bgImg && !S.bgFixed && !o) {
+            const hs = 10 / S.zoom;
+            const corners = [[S.bgX,S.bgY],[S.bgX+S.bgW,S.bgY],[S.bgX+S.bgW,S.bgY+S.bgH],[S.bgX,S.bgY+S.bgH]];
+            let onCorner = false;
+            for(const [cx2,cy2] of corners) {
+                if(Math.abs(p.x-cx2)<hs && Math.abs(p.y-cy2)<hs) { onCorner = true; break; }
+            }
+            if(onCorner) cv.style.cursor = 'nwse-resize';
+            else if(p.x>=S.bgX && p.x<=S.bgX+S.bgW && p.y>=S.bgY && p.y<=S.bgY+S.bgH) cv.style.cursor = 'move';
+        }
+        draw(); return;
+    }
+    
+    // Background image drag/resize
+    if(S.bgDragMode === 'move') {
+        S.bgX = p.x - S.bgDragOff.x; S.bgY = p.y - S.bgDragOff.y;
+        draw(); return;
+    }
+    if(S.bgDragMode === 'resize') {
+        const i = S.bgDragCorner;
+        if(i===0) { S.bgW += S.bgX-p.x; S.bgH += S.bgY-p.y; S.bgX = p.x; S.bgY = p.y; }
+        else if(i===1) { S.bgW = p.x-S.bgX; S.bgH += S.bgY-p.y; S.bgY = p.y; }
+        else if(i===2) { S.bgW = p.x-S.bgX; S.bgH = p.y-S.bgY; }
+        else if(i===3) { S.bgW += S.bgX-p.x; S.bgX = p.x; S.bgH = p.y-S.bgY; }
+        if(S.bgW < 10) S.bgW = 10; if(S.bgH < 10) S.bgH = 10;
+        draw(); return;
+    }
+    
+    // Snap endpoint during drawing
+    if(S.isDown && ['wall','door','window','stairs','dimension'].includes(S.tool)) {
+        const sp = snapPt(p);
+        if(sp) { S.curX = sp.x; S.curY = sp.y; p = {x:sp.x, y:sp.y}; }
+    }
+    // HV constrain during drawing
+    if(S.isDown && S.tool === 'wall') {
+        const hp = hvSnap({x:S.startX,y:S.startY}, p);
+        S.curX = hp.x; S.curY = hp.y;
+        p = hp;
+    }
+    // Update snap indicator for final position (after all constraints)
+    if(S.isDown && ['wall','door','window','stairs','dimension'].includes(S.tool)) {
+        S.snapPt = snapPt(p);
+    }
+    
+    if(S.tool === 'select' && S.sel) {
+        const dx = p.x - S.startX, dy = p.y - S.startY;
+        S.sel.sX += dx; S.sel.sY += dy; S.sel.eX += dx; S.sel.eY += dy;
+        if(['wall','dimension'].includes(S.sel.type)) { S.sel.eX += dx; S.sel.eY += dy; }
+        else { S.sel.x += dx; S.sel.y += dy; }
+        S.startX = p.x; S.startY = p.y;
+        draw(); update3D(); return;
+    }
+    
+    if(S.tool === 'pan' && S.isDrag) {
+        S.offsetX += e.movementX; S.offsetY += e.movementY; draw(); return;
+    }
+    
+    draw();
+});
+
+cv.addEventListener('mouseup', e => {
+    if(e.button !== 0) return;
+    const p = wpos(e);
+    
+    if(S.tool === 'pan') { S.isDown = false; S.isDrag = false; cv.style.cursor = 'grab'; draw(); return; }
+    
+    if(S.tool === 'select') { S.isDown = false; S.isDrag = false;
+        if(!S.sel) {
+            const o = findObj(p);
+            if(o) S.sel = o;
+        }
+        draw(); return;
+    }
+    
+    if(['wall','door','window','stairs','room','furniture','dimension'].includes(S.tool) && S.isDown) {
+        const dx = p.x - S.startX, dy = p.y - S.startY;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        if(len > 3) {
+            // Snap end point
+            let ex = p.x, ey = p.y;
+            if(['wall','door','window','stairs','dimension'].includes(S.tool)) {
+                const sp = snapPt(p);
+                if(sp) { ex = sp.x; ey = sp.y; }
+            }
+            // HV constrain
+            if(S.tool === 'wall') {
+                const hp = hvSnap({x:S.startX,y:S.startY}, {x:ex,y:ey});
+                ex = hp.x; ey = hp.y;
+            } // minimum drag distance
+            const layer = S.layers.find(l => l.id === S.activeLayer);
+            if(layer) {
+                const o = {
+                    id: ++S.idCtr, type: S.tool, layer: S.activeLayer,
+                    sX: S.startX, sY: S.startY, eX: ex, eY: ey,
+                    x: Math.min(S.startX, ex), y: Math.min(S.startY, ey),
+                    w: Math.abs(ex - S.startX), h: Math.abs(ey - S.startY),
+                    thk: S.wallThk, ht: S.wallHt,
+                    color: layer.color, furType: 'table', name: ''
+                };
+                if(S.tool === 'window') {
+                    o.w = o.w || 1200;
+                } else if(S.tool === 'furniture') {
+                    if(o.w < 100) o.w = 1500; if(o.h < 100) o.h = 800;
+                } else if(S.tool === 'stairs') {
+                    if(o.w < 100) o.w = 1200; if(o.h < 100) o.h = 2000;
+                } else if(S.tool === 'room') {
+                    if(o.w < 100) o.w = 100; if(o.h < 100) o.h = 100;
+                }
+                S.objects.push(o);
+                layer.ids.push(o.id);
+                S.sel = o;
+                update3D(); updateStatus();
+            }
+        }
+    }
+    
+    S.isDown = false; S.isDrag = false; S.bgDragMode = null;
+    draw();
+});
+
+cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = wpos(e);
+    const f = e.deltaY > 0 ? 0.9 : 1.1;
+    const nz = Math.max(0.05, Math.min(20, S.zoom * f));
+    S.offsetX = p.x * nz - (p.x * S.zoom - S.offsetX);
+    S.offsetY = p.y * nz - (p.y * S.zoom - S.offsetY);
+    S.zoom = nz;
+    draw();
+}, { passive: false });
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mouseleave', () => { S.snapPt = null; S.hover = null; draw(); });
+
+// ====== Keyboard ======
+window.addEventListener('keydown', e => {
+    if(e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase();
+    if(k === 'v') setTool('select');
+    else if(k === 'w') setTool(e.shiftKey ? 'window' : 'wall');
+    else if(k === 'd') setTool('door');
+    else if(k === 's') setTool(e.shiftKey ? 'stairs' : 'select');
+    else if(k === 'r') setTool('room');
+    else if(k === 'f') setTool('furniture');
+    else if(k === 'm') setTool('dimension');
+    else if(k === 'e') setTool('eraser');
+    else if(k === ' ' && e.target.tagName !== 'INPUT') { e.preventDefault(); setTool('pan'); }
+    else if((k === 'delete' || k === 'backspace') && S.sel) {
+        S.objects = S.objects.filter(x => x.id !== S.sel.id);
+        S.layers.forEach(l => l.ids = l.ids.filter(id => id !== S.sel.id));
+        const d = S.sel; S.sel = null; draw(); update3D(); updateStatus();
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if(e.key === ' ' && S.tool === 'pan') setTool('select');
+});
+
+// ====== Tools ======
+function setTool(t) {
+    S.tool = t;
+    S.snapPt = null;
+    S.doorPts = null;
+    S.winPts = null;
+    document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    const modeText = t==='select'?'選取':t==='wall'?'牆壁':t==='door'?'門 (點兩點裁切)':t==='window'?'窗 (點兩點開窗)':t==='stairs'?'階梯':t==='room'?'房間':t==='furniture'?'傢俱':t==='dimension'?'尺寸':t==='eraser'?'刪除':t==='pan'?'平移':t;
+    document.getElementById('sMode').textContent = `模式: ${modeText}`;
+    cv.style.cursor = t === 'pan' ? 'grab' : t === 'select' ? 'default' : 'crosshair';
+    S.sel = null;
+    draw();
+}
+
+// ====== UI ======
+function updateStatus() {
+    document.getElementById('sCount').textContent = `物件: ${S.objects.length}`;
+    setTimeout(updateStatus, 500);
+}
+
+function renderLayers() {
+    const el = document.getElementById('layerList'); el.innerHTML = '';
+    S.layers.forEach(l => {
+        const d = document.createElement('div');
+        d.className = `layer-item ${S.activeLayer === l.id ? 'active' : ''}`;
+        d.innerHTML = `<div class="dot" style="background:${l.color}"></div>
+            <span class="name">${l.name} (${l.ids.length})</span>
+            <span style="cursor:pointer;font-size:14px">${l.vis ? '👁' : '🙈'}</span>`;
+        d.querySelector('span:last-child').onclick = e => { e.stopPropagation(); l.vis = !l.vis; draw(); renderLayers(); };
+        d.onclick = () => { S.activeLayer = l.id; renderLayers(); draw(); };
+        el.appendChild(d);
+    });
+}
+
+// ====== Image ======
+document.getElementById('imgInput').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+        const img = new Image();
+        img.onload = () => {
+            S.bgImg = img;
+            S.bgFixed = false;
+            const ratio = Math.min(250/img.width, 250/img.height);
+            S.bgW = img.width * ratio;
+            S.bgH = img.height * ratio;
+            S.bgX = (250 - S.bgW) / 2;
+            S.bgY = (250 - S.bgH) / 2;
+            draw();
+        };
+        img.src = ev.target.result;
+    };
+    r.readAsDataURL(f);
+    e.target.value = '';
+});
+
+document.getElementById('opSlider').addEventListener('input', e => {
+    S.bgOp = e.target.value/100;
+    document.getElementById('opVal').textContent = e.target.value;
+    draw();
+});
+
+document.getElementById('scSlider').addEventListener('input', e => {
+    S.scale = parseFloat(e.target.value);
+    document.getElementById('scVal').textContent = S.scale;
+    document.getElementById('sScale').textContent = `比例: 1px=${S.scale}mm`;
+    draw();
+});
+
+document.getElementById('btnClearImg').onclick = () => { S.bgImg = null; S.bgFixed = false; draw(); };
+document.getElementById('btnFixImg').onclick = () => { if(S.bgImg) { S.bgFixed = !S.bgFixed; S.bgDragMode = null; document.getElementById('btnFixImg').textContent = S.bgFixed ? '📌 解除固定' : '📌 固定'; draw(); } };
+
+// Properties
+document.getElementById('wallThk').addEventListener('change', e => {
+    S.wallThk = parseInt(e.target.value);
+    S.objects.filter(o => o.type === 'wall').forEach(o => o.thk = S.wallThk);
+    draw(); update3D();
+});
+document.getElementById('wallHt').addEventListener('change', e => {
+    S.wallHt = parseInt(e.target.value);
+    S.objects.filter(o => o.type === 'wall').forEach(o => o.ht = S.wallHt);
+    draw(); update3D();
+});
+
+document.getElementById('winSill').addEventListener('change', e => { S.winSill = parseFloat(e.target.value); draw(); update3D(); });
+document.getElementById('winHt').addEventListener('change', e => { S.winHt = parseFloat(e.target.value); draw(); update3D(); });
+document.getElementById('chkBase').addEventListener('change', e => { S.basePlate = e.target.checked; update3D(); });
+document.getElementById('basePlateThk').addEventListener('change', e => { S.basePlateThk = parseFloat(e.target.value); update3D(); });
+document.getElementById('printScale').addEventListener('change', e => { S.printScale = parseFloat(e.target.value); update3D(); });
+
+// ====== 3D ======
+function init3D() {
+    const el = document.getElementById('canvas3d');
+    S.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    S.renderer.setSize(W, H);
+    S.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    S.renderer.shadowMap.enabled = true;
+    S.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    el.appendChild(S.renderer.domElement);
+    
+    S.camera = new THREE.PerspectiveCamera(45, W/H, 1, 50000);
+    S.camera.position.set(0, 250, 250);
+    
+    S.controls = new OrbitControls(S.camera, S.renderer.domElement);
+    S.controls.enableDamping = true;
+    S.controls.dampingFactor = 0.05;
+    S.controls.target.set(0, 0, 0);
+    
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    S.three = scene;
+    
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    
+    const dl = new THREE.DirectionalLight(0xffffff, 1);
+    dl.position.set(100, 200, 100); dl.castShadow = true;
+    dl.shadow.mapSize.set(2048, 2048);
+    dl.shadow.camera.near = 1; dl.shadow.camera.far = 500;
+    dl.shadow.camera.left = -250; dl.shadow.camera.right = 250;
+    dl.shadow.camera.top = 250; dl.shadow.camera.bottom = -250;
+    scene.add(dl);
+    
+    const fl = new THREE.DirectionalLight(0xffffff, 0.3);
+    fl.position.set(-100, 100, -100); scene.add(fl);
+    
+    const gnd = new THREE.Mesh(new THREE.PlaneGeometry(250, 250), new THREE.MeshStandardMaterial({ color: 0x0d0d1a, roughness: 0.9 }));
+    gnd.rotation.x = -Math.PI/2; gnd.receiveShadow = true;
+    scene.add(gnd);
+    scene.add(new THREE.AxesHelper(250));
+}
+
+function update3D() {
+    if(!S.three) return;
+    
+    S.meshes.forEach(m => { S.three.remove(m);
+        m.geometry?.dispose(); m.material?.dispose(); });
+    S.meshes.clear();
+    
+    const matWall = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.7, side: THREE.DoubleSide });
+    const matDoor = new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.6 });
+    const matStair = new THREE.MeshStandardMaterial({ color: 0x9966cc, roughness: 0.7 });
+    const matBase = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 });
+    const matFur = new THREE.MeshStandardMaterial({ color: 0x95a5a6, roughness: 0.8 });
+    
+    const sc = S.printScale;
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let has = false;
+    S.objects.forEach(o => {
+        if(o.type === 'wall') { minX = Math.min(minX, o.sX, o.eX); maxX = Math.max(maxX, o.sX, o.eX);
+            minY = Math.min(minY, o.sY, o.eY); maxY = Math.max(maxY, o.sY, o.eY); has = true; }
+        else { minX = Math.min(minX, o.x); maxX = Math.max(maxX, o.x+o.w);
+            minY = Math.min(minY, o.y); maxY = Math.max(maxY, o.y+o.h); has = true; }
+    });
+    
+    const cx = has ? (minX+maxX)/2*S.scale*sc : 0;
+    const cy = has ? (minY+maxY)/2*S.scale*sc : 0;
+    
+    // Base - 使用背景圖片尺寸
+    if(S.basePlate && S.bgImg) {
+        const bw = S.bgW*S.scale*sc, bd = S.bgH*S.scale*sc;
+        const b = new THREE.Mesh(new THREE.BoxGeometry(bw, S.basePlateThk*sc, bd), matBase);
+        b.position.set((S.bgX+S.bgW/2)*S.scale*sc, -S.basePlateThk*sc/2, (S.bgY+S.bgH/2)*S.scale*sc);
+        b.receiveShadow = true;
+        S.three.add(b); S.meshes.set('base', b);
+    }
+    
+    // Walls
+    S.objects.filter(o => o.type === 'wall').forEach((o, i) => {
+        const t = (o.thk || S.wallThk)*sc, h = (o.ht || S.wallHt)*sc;
+        const x1=o.sX*S.scale*sc, y1=o.sY*S.scale*sc, x2=o.eX*S.scale*sc, y2=o.eY*S.scale*sc;
+        const len = Math.sqrt((x2-x1)**2+(y2-y1)**2), ang = Math.atan2(y2-y1, x2-x1);
+        const midX = (x1+x2)/2, midY = (y1+y2)/2;
+        
+        if(o.windowCuts && o.windowCuts.length > 0) {
+            const wdx = o.eX-o.sX, wdy = o.eY-o.sY;
+            const wlen = Math.sqrt(wdx*wdx+wdy*wdy);
+            if(wlen > 0) {
+                const ss = S.scale*sc;
+                const wnx = wdx/wlen, wny = wdy/wlen;
+                const cuts = [...o.windowCuts].sort((a,b) => a.t1 - b.t1);
+                let lastT = 0;
+                cuts.forEach(wc => {
+                    if(wc.t1 > lastT) {
+                        const segLen = (wc.t1 - lastT)*ss;
+                        const segMid = (lastT + wc.t1) / 2;
+                        const sx = (o.sX + wnx*segMid)*ss, sy = (o.sY + wny*segMid)*ss;
+                        const g = new THREE.Mesh(new THREE.BoxGeometry(segLen, h, t), matWall);
+                        g.position.set(sx, h/2, sy); g.rotation.y = -ang;
+                        g.castShadow = true; g.receiveShadow = true;
+                        S.three.add(g); S.meshes.set('wall_'+i+'_seg_'+lastT, g);
+                    }
+                    const sill = S.winSill*sc;
+                    if(sill > 0) {
+                        const segMid = (wc.t1+wc.t2)/2;
+                        const sx = (o.sX + wnx*segMid)*ss, sy = (o.sY + wny*segMid)*ss;
+                        const g = new THREE.Mesh(new THREE.BoxGeometry((wc.t2-wc.t1)*ss, sill, t), matWall);
+                        g.position.set(sx, sill/2, sy); g.rotation.y = -ang;
+                        g.castShadow = true; g.receiveShadow = true;
+                        S.three.add(g); S.meshes.set('wall_'+i+'_sill_'+lastT, g);
+                    }
+                    const winTopScaled = (S.winSill+S.winHt)*sc;
+                    if(winTopScaled < h) {
+                        const aboveH = h - winTopScaled;
+                        const segMid = (wc.t1+wc.t2)/2;
+                        const sx = (o.sX + wnx*segMid)*ss, sy = (o.sY + wny*segMid)*ss;
+                        const g = new THREE.Mesh(new THREE.BoxGeometry((wc.t2-wc.t1)*ss, aboveH, t), matWall);
+                        g.position.set(sx, winTopScaled + aboveH/2, sy); g.rotation.y = -ang;
+                        g.castShadow = true; g.receiveShadow = true;
+                        S.three.add(g); S.meshes.set('wall_'+i+'_top_'+lastT, g);
+                    }
+                    lastT = wc.t2;
+                });
+                if(lastT < wlen) {
+                    const segLen = (wlen - lastT)*ss;
+                    const segMid = (lastT + wlen) / 2;
+                    const sx = (o.sX + wnx*segMid)*ss, sy = (o.sY + wny*segMid)*ss;
+                    const g = new THREE.Mesh(new THREE.BoxGeometry(segLen, h, t), matWall);
+                    g.position.set(sx, h/2, sy); g.rotation.y = -ang;
+                    g.castShadow = true; g.receiveShadow = true;
+                    S.three.add(g); S.meshes.set('wall_'+i+'_rem_'+lastT, g);
+                }
+            }
+        } else {
+            const geo = new THREE.BoxGeometry(len, h, t);
+            const m = new THREE.Mesh(geo, matWall);
+            m.position.set(midX, h/2, midY); m.rotation.y = -ang;
+            m.castShadow = true; m.receiveShadow = true;
+            S.three.add(m); S.meshes.set('wall_'+i, m);
+        }
+    });
+    
+    // Stairs
+    S.objects.filter(o => o.type === 'stairs').forEach((o, i) => {
+        const x = o.x*S.scale*sc, z = o.y*S.scale*sc, w = (o.w||1200)*sc, d = (o.h||2000)*sc;
+        const st = Math.max(3, Math.round((o.h||2000)/200));
+        const sh = (S.wallHt||100)*sc/st, sd = d/st;
+        const g = new THREE.Group();
+        for(let s=0; s<st; s++) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, sh, sd), matStair);
+            m.position.set(x+w/2, s*sh + sh/2, z + s*sd + sd/2);
+            m.castShadow = true; m.receiveShadow = true; g.add(m);
+        }
+        S.three.add(g); S.meshes.set('stair_'+i, g);
+    });
+    
+    // Rooms (floor labels)
+    S.objects.filter(o => o.type === 'room').forEach((o, i) => {
+        const g = new THREE.PlaneGeometry(o.w*S.scale*sc, o.h*S.scale*sc);
+        const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: parseInt(o.color.replace('#','0x')), transparent: true, opacity: 0.2, side: THREE.DoubleSide }));
+        m.rotation.x = -Math.PI/2;
+        m.position.set((o.x+o.w/2)*S.scale*sc, 1, (o.y+o.h/2)*S.scale*sc);
+        S.three.add(m); S.meshes.set('room_'+i, m);
+    });
+    
+    // Furniture
+    S.objects.filter(o => o.type === 'furniture').forEach((o, i) => {
+        const x = (o.x+o.w/2)*S.scale*sc, z = (o.y+o.h/2)*S.scale*sc;
+        const w = o.w*S.scale*sc, d = o.h*S.scale*sc, h = 750*sc;
+        let geo;
+        if(o.furType === 'bed') geo = new THREE.BoxGeometry(w, 500*sc, d);
+        else if(o.furType === 'sofa') geo = new THREE.BoxGeometry(w, 800*sc, d);
+        else if(o.furType === 'table') geo = new THREE.CylinderGeometry(Math.min(w,d)/2, Math.min(w,d)/2, 750*sc, 8);
+        else geo = new THREE.BoxGeometry(w, h, d);
+        const m = new THREE.Mesh(geo, matFur);
+        m.position.set(x, h/2, z); m.castShadow = true;
+        S.three.add(m); S.meshes.set('fur_'+i, m);
+    });
+    
+    S.controls.target.set(cx, (S.wallHt||100)*sc/2, cy);
+}
+
+// ====== View Toggle ======
+document.querySelectorAll('[data-view]').forEach(b => {
+    b.addEventListener('click', () => {
+        document.querySelectorAll('[data-view]').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const is3d = b.dataset.view === '3d';
+        document.getElementById('canvas2d').style.display = is3d ? 'none' : 'block';
+        document.getElementById('canvas3d').style.display = is3d ? 'block' : 'none';
+        if(is3d) { resize(); update3D(); }
+    });
+});
+
+// ====== Project ======
+document.getElementById('btnNew').onclick = () => {
+    if(!confirm('開新專案？')) return;
+    S.objects = []; S.idCtr = 0; S.bgImg = null; S.bgFixed = false; S.sel = null; S.scale = 1; S.zoom = 1; S.offsetX = 0; S.offsetY = 0;
+    S.layers.forEach(l => l.ids = []);
+    document.getElementById('scSlider').value = 1; document.getElementById('scVal').textContent = '1';
+    draw(); renderLayers(); update3D(); updateStatus();
+};
+
+document.getElementById('btnSave').onclick = () => {
+    const d = {
+        scale: S.scale, offsetX: S.offsetX, offsetY: S.offsetY, zoom: S.zoom,
+        bgOp: S.bgOp, bgImg: S.bgImg ? S.bgImg.src : null,
+        bgX: S.bgX, bgY: S.bgY, bgW: S.bgW, bgH: S.bgH, bgFixed: S.bgFixed,
+        wallThk: S.wallThk, wallHt: S.wallHt, winSill: S.winSill, winHt: S.winHt,
+        basePlate: S.basePlate, basePlateThk: S.basePlateThk, printScale: S.printScale,
+        objects: S.objects, idCtr: S.idCtr,
+        layers: S.layers.map(l => ({...l}))
+    };
+    const blob = new Blob([JSON.stringify(d)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'floorplan_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+};
+
+const pf = document.createElement('input'); pf.type = 'file'; pf.accept = '.json'; pf.style.display = 'none';
+document.getElementById('btnLoad').onclick = () => pf.click();
+pf.addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+        try {
+            const d = JSON.parse(ev.target.result);
+            const bgSrc = d.bgImg; delete d.bgImg;
+            Object.assign(S, d);
+            S.bgImg = null;
+            document.getElementById('scSlider').value = S.scale;
+            document.getElementById('scVal').textContent = S.scale;
+            document.getElementById('opSlider').value = S.bgOp*100;
+            document.getElementById('opVal').textContent = Math.round(S.bgOp*100);
+            if(bgSrc) { const img = new Image(); img.onload = () => { S.bgImg = img;
+                if(d.bgX!==undefined) { S.bgX=d.bgX; S.bgY=d.bgY; S.bgW=d.bgW; S.bgH=d.bgH; S.bgFixed=d.bgFixed; }
+                draw(); }; img.src = bgSrc; }
+            renderLayers(); update3D(); updateStatus(); draw();
+        } catch(err) { alert('載入失敗'); }
+    };
+    r.readAsText(f);
+});
+document.body.appendChild(pf);
+
+// ====== Export STL ======
+document.getElementById('btnExport').onclick = () => {
+    if(!S.objects.length) { alert('沒有可匯出的模型'); return; }
+    document.getElementById('expModal').classList.add('open');
+};
+window.expCancel = () => document.getElementById('expModal').classList.remove('open');
+window.expDo = async () => {
+    document.getElementById('expModal').classList.remove('open');
+    const name = document.getElementById('expName').value || 'floorplan';
+    const unit = document.getElementById('expUnit').value;
+    const quality = document.getElementById('expQuality').value;
+    const btn = document.getElementById('btnExport');
+    btn.textContent = '匯出中...'; btn.disabled = true;
+    
+    try {
+        const scene = new THREE.Scene();
+        const us = unit === 'mm' ? 1 : unit === 'cm' ? 10 : 1000;
+        const gs = S.printScale / us;
+        const mat = new THREE.MeshStandardMaterial({color:0xcccccc});
+        const geos = [];
+        
+        // Walls - 實心牆壁 (含窗戶切割)
+        S.objects.filter(o => o.type === 'wall').forEach(o => {
+            const t = (o.thk||S.wallThk)*gs, h = (o.ht||S.wallHt)*gs;
+            const x1=o.sX*S.scale*gs, y1=o.sY*S.scale*gs, x2=o.eX*S.scale*gs, y2=o.eY*S.scale*gs;
+            const len = Math.sqrt((x2-x1)**2+(y2-y1)**2), ang = Math.atan2(y2-y1,x2-x1);
+            const mx = (x1+x2)/2, my = (y1+y2)/2;
+            
+            // 有窗戶切割的牆壁
+            if(o.windowCuts && o.windowCuts.length > 0) {
+                const wdx = o.eX-o.sX, wdy = o.eY-o.sY;
+                const wlen = Math.sqrt(wdx*wdx+wdy*wdy);
+                if(wlen > 0) {
+                    const sg = S.scale*gs;
+                    const wnx = wdx/wlen, wny = wdy/wlen;
+                    const cuts = [...o.windowCuts].sort((a,b) => a.t1 - b.t1);
+                    let lastT = 0;
+                    cuts.forEach(wc => {
+                        // 窗戶前牆段
+                        if(wc.t1 > lastT) {
+                            const segLen = (wc.t1 - lastT)*sg;
+                            const segMid = (lastT + wc.t1) / 2;
+                            const sx = (o.sX + wnx*segMid)*sg, sy = (o.sY + wny*segMid)*sg;
+                            const geo = new THREE.BoxGeometry(segLen, t, h);
+                            const m = new THREE.Mesh(geo);
+                            m.position.set(sx, sy, h/2); m.rotation.z = -ang;
+                            m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+                        }
+                        // 窗戶下方牆段
+                        const sill = S.winSill*gs;
+                        if(sill > 0) {
+                            const segMid = (wc.t1+wc.t2)/2;
+                            const sx = (o.sX + wnx*segMid)*sg, sy = (o.sY + wny*segMid)*sg;
+                            const geo = new THREE.BoxGeometry((wc.t2-wc.t1)*sg, t, sill);
+                            const m = new THREE.Mesh(geo);
+                            m.position.set(sx, sy, sill/2); m.rotation.z = -ang;
+                            m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+                        }
+                        // 窗戶上方牆段
+                        const winTopScaled = (S.winSill+S.winHt)*gs;
+                        if(winTopScaled < h) {
+                            const aboveH = h - winTopScaled;
+                            const segMid = (wc.t1+wc.t2)/2;
+                            const sx = (o.sX + wnx*segMid)*sg, sy = (o.sY + wny*segMid)*sg;
+                            const geo = new THREE.BoxGeometry((wc.t2-wc.t1)*sg, t, aboveH);
+                            const m = new THREE.Mesh(geo);
+                            m.position.set(sx, sy, winTopScaled + aboveH/2); m.rotation.z = -ang;
+                            m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+                        }
+                        lastT = wc.t2;
+                    });
+                    // 最後一段牆
+                    if(lastT < wlen) {
+                        const segLen = (wlen - lastT)*sg;
+                        const segMid = (lastT + wlen) / 2;
+                        const sx = (o.sX + wnx*segMid)*sg, sy = (o.sY + wny*segMid)*sg;
+                        const geo = new THREE.BoxGeometry(segLen, t, h);
+                        const m = new THREE.Mesh(geo);
+                        m.position.set(sx, sy, h/2); m.rotation.z = -ang;
+                        m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+                    }
+                }
+            } else {
+                // 無窗戶的普通牆壁
+                const geo = new THREE.BoxGeometry(len, t, h);
+                const m = new THREE.Mesh(geo);
+                m.position.set(mx, my, h/2); m.rotation.z = -ang;
+                m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+            }
+        });
+
+        // Base plate - 底板 (Z軸朝上)
+        if(S.basePlate && S.bgImg) {
+            const bw = S.bgW*S.scale*gs, bd = S.bgH*S.scale*gs, bh = S.basePlateThk*gs;
+            const g = new THREE.BoxGeometry(bw, bd, bh);
+            const m = new THREE.Mesh(g);
+            m.position.set((S.bgX+S.bgW/2)*S.scale*gs, (S.bgY+S.bgH/2)*S.scale*gs, bh/2);
+            m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+        }
+
+        // Stairs
+        S.objects.filter(o => o.type === 'stairs').forEach(o => {
+            const w = (o.w||1200)*gs, d = (o.h||2000)*gs;
+            const st = Math.max(3, Math.round((o.h||2000)/200));
+            const sh = (S.wallHt||100)*gs/st, sd = d/st;
+            for(let s=0; s<st; s++) {
+                const g = new THREE.BoxGeometry(w, sd, sh);
+                const m = new THREE.Mesh(g);
+                m.position.set((o.x+o.w/2)*S.scale*gs, (o.y+s*sd+sd/2)*S.scale*gs, 0+s*sh+sh/2);
+                m.updateMatrix(); geos.push(m.geometry.clone().applyMatrix4(m.matrix));
+            }
+        });
+        
+        if(geos.length) {
+            const merged = mergeGeos(geos);
+            if(merged) scene.add(new THREE.Mesh(merged, mat));
+        }
+        
+        const exporter = new STLExporter();
+        const data = exporter.parse(scene, {binary: true});
+        const blob = new Blob([data], {type:'application/octet-stream'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = name+'.stl'; a.click();
+    } catch(err) { alert('匯出失敗: '+err.message); }
+    btn.textContent = '匯出 STL'; btn.disabled = false;
+};
+
+function mergeGeos(geos) {
+    let totalV = 0, totalI = 0;
+    geos.forEach(g => {
+        const p = g.getAttribute('position');
+        totalV += p.count;
+        totalI += g.index ? g.index.count : p.count;
+    });
+    
+    const pos = new Float32Array(totalV*3), nrm = new Float32Array(totalV*3);
+    const idx = new (totalV > 65535 ? Uint32Array : Uint16Array)(totalI);
+    let vo = 0, io = 0;
+    
+    geos.forEach(g => {
+        const p = g.getAttribute('position'), n = g.getAttribute('normal');
+        const cnt = p.count;
+        pos.set(p.array, vo*3);
+        if(n) nrm.set(n.array, vo*3);
+        if(g.index) {
+            for(let i=0; i<g.index.count; i++) idx[io++] = g.index.array[i] + vo;
+        } else {
+            for(let i=0; i<cnt; i++) idx[io++] = vo + i;
+        }
+        vo += cnt;
+    });
+    
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    merged.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+    merged.setIndex(new THREE.BufferAttribute(idx, 1));
+    return merged;
+}
+
+// ====== Init ======
+document.querySelectorAll('[data-tool]').forEach(b => {
+    b.addEventListener('click', () => setTool(b.dataset.tool));
+});
+
+renderLayers();
+resize();
+init3D();
+update3D();
+updateStatus();
+
+// Animation loop
+function loop() {
+    if(document.querySelector('[data-view="3d"].active')) {
+        S.controls.update();
+        S.renderer.render(S.three, S.camera);
+    }
+    requestAnimationFrame(loop);
+}
+loop();
+
+console.log('Floorplan to 3D ready!');
+</script>
+</body>
+</html>
