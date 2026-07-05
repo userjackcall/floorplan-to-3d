@@ -2,6 +2,12 @@
 
 一個基於瀏覽器的 2D 樓層圖繪製 + 3D 預覽 + STL 匯出工具，專為 3D 列印設計。
 
+<div align="center">
+  <img src="screenshots/PixPin_2026-07-05_13-28-11.png" alt="2D 編輯畫面" width="45%">
+  <img src="screenshots/PixPin_2026-07-05_13-28-33.png" alt="3D 預覽畫面" width="45%">
+  <p><em>左：2D 編輯畫面　右：3D 預覽畫面</em></p>
+</div>
+
 ## 功能特色
 
 - **2D 繪圖**：繪製牆壁、階梯、房間、傢俱、尺寸標註

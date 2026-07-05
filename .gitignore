@@ -1,4 +1,8 @@
 *.bak
 *.tmp
+*.stl
+*.webp
+!screenshots/
+*.json
 .DS_Store
 Thumbs.db
