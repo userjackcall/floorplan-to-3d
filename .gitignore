@@ -2,7 +2,7 @@
 *.tmp
 *.stl
 *.webp
-!screenshots/
+/PixPin_*.png
 *.json
 .DS_Store
 Thumbs.db
